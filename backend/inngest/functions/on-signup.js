@@ -2,9 +2,8 @@ import { NonRetriableError } from 'inngest';
 import { User } from '../../src/models/user.model.js';
 import { inngest } from '../client.js';
 import { sendMail } from '../../src/utils/sendMail.js';
-import { err } from 'inngest/types';
 
-export const onUserSignUp = inngest.createFunction(
+const onUserSignUp = inngest.createFunction(
   {
     id: 'on-user-signup',
     retries: 2,
@@ -15,7 +14,7 @@ export const onUserSignUp = inngest.createFunction(
       const { email } = event.data;
       const user = await step.run('get-user-email', async () => {
         const userObject = await User.findOne({ email });
-        if (!user) {
+        if (!userObject) {
           throw new NonRetriableError('User no longer exists in our databases');
         }
         return userObject;
@@ -36,3 +35,5 @@ export const onUserSignUp = inngest.createFunction(
     }
   }
 );
+
+export { onUserSignUp };

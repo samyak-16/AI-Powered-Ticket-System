@@ -6,7 +6,7 @@ const ticketSchema = new mongoose.Schema({
   status: {
     type: String,
     default: 'todo',
-    enums: ['todo'],
+    enums: ['TODO', 'Analyzing-By-AI', 'sent-to-moderator', 'ressolved'],
   },
   createdBy: {
     type: mongoose.Schema.ObjectId,
@@ -18,7 +18,11 @@ const ticketSchema = new mongoose.Schema({
     default: null,
   },
 
-  priority: String,
+  priority: {
+    type: [string],
+    default: null,
+    enums: ['low', 'medium', 'high'],
+  },
   deadline: Date,
   helpfulNotes: String,
   relatedSkills: [String],
