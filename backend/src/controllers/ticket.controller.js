@@ -15,6 +15,7 @@ const createTicket = async (req, res) => {
       description,
       createdBy: req.user._id.toString(),
     });
+    await ticket.save();
     await inngest.send({
       name: 'ticket/created',
       data: { ticketId: ticket._id.toString() },
@@ -41,7 +42,7 @@ const getAllTicket = async (req, res) => {
   try {
     let tickets = [];
     if (user.role !== 'user') {
-      tickets = Ticket.find({})
+      tickets = await Ticket.find({})
         .populate('assignedTo', ['email', '_id'])
         .sort({ createdAt: -1 });
     } else {
@@ -75,7 +76,7 @@ const getTicket = async (req, res) => {
         '_id',
       ]);
     } else {
-      ticket = Ticket.findOne({
+      ticket = await Ticket.findOne({
         createdBy: user._id.toString(),
         _id: ticketId,
       }).select('title description status createdAt');

@@ -7,19 +7,21 @@ import { env } from '../config/env.js';
 import { ApiResponse } from '../utils/api-response.js';
 
 const registerUser = async (req, res) => {
-  const { email = '', password = '', skills = [] } = req.body;
+  const { email = '', password = '', skills = [] } = req.body || {};
 
-  if (!email || !password || skills.length) {
+  if (!email || !password) {
     return res.status(400).json(new ApiError(400, 'All Fields are required'));
   }
   try {
     const hashedPassword = await bcrytp.hash(password, 10);
-    const distinctSkills = [...new Set(skills)];
     const newUser = new User({
       email,
       password: hashedPassword,
-      skills: distinctSkills,
     });
+    if (skills.length) {
+      const distinctSkills = [...new Set(skills)];
+      newUser.skills = distinctSkills;
+    }
     await newUser.save();
     await inngest.send({
       name: 'user/signup',
@@ -31,7 +33,7 @@ const registerUser = async (req, res) => {
       .status(200)
       .json(new ApiResponse(200, { newUser }, 'User registered Successfully'));
   } catch (error) {
-    console.error('Internal Server Error at loginUser', error);
+    console.error('Internal Server Error at loginUser : ', error.message);
     res
       .status(500)
       .json(new ApiError(500, 'Internal Server Error at loginUser'));
@@ -118,7 +120,7 @@ const updateUser = async (req, res) => {
     if (req.user.role !== 'admin') {
       return res
         .status(403)
-        .json(new ApiError(403, 'Forbidden - Not authorized'));
+        .json(new ApiError(403, 'Forbidden - Not authorized - not an admin '));
     }
     const user = await User.findOne({ email }).select('-password');
     if (!user) {
@@ -159,7 +161,7 @@ const getAllUsersDetails = async (req, res) => {
       return res.status(403).json(new ApiError(403, 'Forbidden -  cant fetch'));
     }
 
-    const users = User.find().select('-password');
+    const users = await User.find().select('-password');
     if (users.length == 0) {
       return res
         .status(404)

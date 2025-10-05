@@ -26,7 +26,7 @@ const onUserSignUp = inngest.createFunction(
         \n \n
         Thanks for signing up .  We are glad to have you onboard .
         `;
-        await sendMail(user.email, subject, text);
+        await sendMail(user.email, subject, message);
       });
       return { success: true };
     } catch (error) {

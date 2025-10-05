@@ -15,86 +15,82 @@ const onTicketCreate = inngest.createFunction(
     try {
       const { ticketId } = event.data;
 
-      //Fetch Ticket From db
-
+      // Fetch ticket
       const ticket = await step.run('fetch-ticket', async () => {
         const ticketObject = await Ticket.findById(ticketId);
         if (!ticketObject) {
-          throw new NonRetriableError(
-            'Ticket no longer exists in our databases'
-          );
+          throw new NonRetriableError('Ticket no longer exists in database');
         }
         return ticketObject;
       });
 
+      // Update status to analyzing
       await step.run('update-ticket-status', async () => {
         await Ticket.findByIdAndUpdate(ticketId, { status: 'Analyzing-By-AI' });
       });
 
-      const aiResponse = await step.run('ai-response', async () => {
-        const aiResponse = await analyzeTicket(ticket);
-        if (!aiResponse) {
-          throw new Error('AI response was null, retrying...');
-        }
-        return aiResponse;
-      });
+      // Analyze with AI
+      const aiResponse = await analyzeTicket(ticket);
+      console.log('AI Response:', JSON.stringify(aiResponse, null, 2));
 
-      console.log('AI Response : ', aiResponse);
-
-      // {
-      // "summary": "Short summary of the ticket",
-      // "priority": "high",
-      // "helpfulNotes": "Here are useful tips...",
-      // "relatedSkills": ["React", "Node.js"]
-      // }
-
+      // Update ticket with AI results
       const requiredSkills = await step.run('ai-processing', async () => {
-        let skills = [];
+        const skills = aiResponse.relatedSkills || [];
         await Ticket.findByIdAndUpdate(ticketId, {
-          priority: !['low', 'medium', 'high'].includes(aiResponse.priority)
-            ? 'medium'
-            : aiResponse.priority,
+          priority: ['low', 'medium', 'high'].includes(aiResponse.priority)
+            ? aiResponse.priority
+            : 'medium',
           helpfulNotes: aiResponse.helpfulNotes,
-          relatedSkills: aiResponse.relatedSkills,
+          relatedSkills: skills,
         });
-        skills = aiResponse.relatedSkills;
         return skills;
       });
 
+      // Assign to moderator/admin
       const moderator = await step.run(
         'assign-ticket-to-moderator',
         async () => {
           let user = await User.findOne({
             role: 'moderator',
-            skills: {
-              $elemMatch: {
-                $regex: relatedskills.join('|'),
-                $options: 'i',
-              },
-            },
+            skills: requiredSkills.length
+              ? {
+                  $elemMatch: {
+                    $regex: requiredSkills.join('|'),
+                    $options: 'i',
+                  },
+                }
+              : undefined,
           });
+
           if (!user) {
-            const user = await User.findOne({ role: 'admin' });
+            user = await User.findOne({ role: 'admin' });
           }
-          await Ticket.findByIdAndUpdate(ticketId, { assignedTo: user._id });
+
+          await Ticket.findByIdAndUpdate(ticketId, {
+            assignedTo: user._id,
+            status: 'sent-to-moderator',
+          });
+
           return user;
         }
       );
+
+      // Send email notification
       await step.run('send-ticket-email', async () => {
         if (moderator) {
           const finalTicket = await Ticket.findById(ticketId);
           const subject = 'Ticket Assigned';
-          const message = `Hi
-        \n \n
-        A new ticket is ssigned to you : ${finalTicket.title}.
-        `;
-          await sendMail(moderator.email, subject, text);
+          const message = `Hi,
+
+A new ticket has been assigned to you: ${finalTicket.title}.
+`;
+          await sendMail(moderator.email, subject, message);
         }
       });
 
       return { success: true };
     } catch (error) {
-      console.error('❌ Error running step : ', error.message);
+      console.error('❌ Error running step:', error.message);
       return { success: false };
     }
   }

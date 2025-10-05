@@ -3,9 +3,12 @@ import { env } from '../config/env.js';
 
 const analyzeTicket = async (ticket) => {
   const supportAgent = createAgent({
+    model: gemini({
+      model: 'gemini-2.0-flash-lite',
+      apiKey: env.GEMINI_API_KEY,
+    }),
     name: 'AI Ticket Triage Assistant',
-    // description: '',
-    system: `You are an expert AI assistant that processes technical support tickets. 
+    system: `You are an expert AI assistant that processes technical support tickets.
 
 Your job is to:
 1. Summarize the issue.
@@ -14,53 +17,58 @@ Your job is to:
 4. List relevant technical skills required.
 
 IMPORTANT:
-- Respond with *only* valid raw JSON.
-- Do NOT include markdown, code fences, comments, or any extra formatting.
-- The format must be a raw JSON object.
-
-Repeat: Do not wrap your output in markdown or code fences.`,
-    model: gemini({
-      model: 'gemini-1.5-flash-8b',
-      apiKey: env.GEMINI_API_KEY,
-      defaultParameters: {
-        max_tokens: 500,
-      },
-    }),
+- Respond with only valid raw JSON.
+- Do NOT include markdown, code fences, comments, or extra formatting.
+- The format must be a raw JSON object.`,
   });
 
-  const response =
-    await supportAgent.run(`You are a ticket triage agent. Only return a strict JSON object with no extra text, headers, or markdown.
-        
-Analyze the following support ticket and provide a JSON object with:
+  let response;
+  try {
+    response =
+      await supportAgent.run(`You are a ticket triage agent. Return only a strict JSON object with no extra text or markdown.
 
-- summary: A short 1-2 sentence summary of the issue.
-- priority: One of "low", "medium", or "high".
-- helpfulNotes: A detailed technical explanation that a moderator can use to solve this issue. Include useful external links or resources if possible.
-- relatedSkills: An array of relevant skills required to solve the issue (e.g., ["React", "MongoDB"]).
-
-Respond ONLY in this JSON format and do not include any other text or markdown in the answer:
-
-{
-"summary": "Short summary of the ticket",
-"priority": "high",
-"helpfulNotes": "Here are useful tips...",
-"relatedSkills": ["React", "Node.js"]
-}
-
----
-
-Ticket information:
+Analyze this support ticket:
 
 - Title: ${ticket.title}
-- Description: ${ticket.description}`);
+- Description: ${ticket.description}
 
-  const raw = response.output[0].context;
+Respond ONLY in this JSON format:
+
+{
+  "summary": "Short summary of the ticket",
+  "priority": "high",
+  "helpfulNotes": "Here are useful tips...",
+  "relatedSkills": ["React", "Node.js"]
+}`);
+  } catch (err) {
+    console.error('Error calling AI:', err.message);
+    return {
+      summary: ticket?.description?.slice(0, 140) || 'No summary available',
+      priority: 'medium',
+      helpfulNotes:
+        'AI analysis unavailable. Please review this ticket manually.',
+      relatedSkills: [],
+    };
+  }
+
+  // Extract raw content
+  const raw = response?.output?.[0]?.content || '';
+  const cleaned = raw
+    .replace(/```json\s*/i, '')
+    .replace(/```/g, '')
+    .trim();
 
   try {
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to parse JSON from AI response:', e.message);
-    return null; //! watchOut for this
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.warn('Invalid AI response. Using fallback:', err.message);
+    return {
+      summary: ticket?.description?.slice(0, 140) || 'No summary available',
+      priority: 'medium',
+      helpfulNotes:
+        'AI response was invalid. Please review this ticket manually.',
+      relatedSkills: [],
+    };
   }
 };
 
